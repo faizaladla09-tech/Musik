@@ -33,8 +33,8 @@ export default function DeveloperPage() {
             <div className="absolute inset-0 bg-[#224032] rounded-[60%_40%_30%_70%_/_50%_60%_40%_50%] animate-[blob_8s_ease-in-out_infinite_reverse] scale-105" />
             <div className="relative w-full h-full rounded-[50%_50%_40%_60%_/_60%_40%_50%_50%] overflow-hidden border-2 border-[#4ADE80]/20 z-10">
               <Image 
-                src="https://f.top4top.io/p_3733w0g4e0.jpg" 
-                alt="SANN404 FORUM" 
+                src="https://d.uguu.se/dMfkZGpi.jpeg" 
+                alt="FAIZAL GRUB" 
                 fill 
                 sizes="192px"
                 className="object-cover"
@@ -43,7 +43,7 @@ export default function DeveloperPage() {
           </div>
 
           <div className="flex items-center justify-center gap-2 mb-2">
-            <h2 className="text-2xl font-bold text-white">SANN404 FORUM</h2>
+            <h2 className="text-2xl font-bold text-white">FAIZAL GRUB</h2>
             <CheckCircle2 className="w-6 h-6 text-blue-500 fill-blue-500/20" />
           </div>
 
@@ -57,7 +57,7 @@ export default function DeveloperPage() {
               <Globe className="w-6 h-6 text-white" />
               <span className="text-[10px] text-white/70 font-medium">Website</span>
             </a>
-            <a href="https://whatsapp.com/channel/0029Vb6ukqnHQbS4mKP0j80L" target="_blank" rel="noopener noreferrer" className="flex flex-col items-center justify-center gap-2 bg-[#1C1C1E] hover:bg-[#2C2C2E] p-4 rounded-2xl transition-colors">
+            <a href="https://whatsapp.com/channel/0029VbBaR0Q9Bb617MUPC92X" target="_blank" rel="noopener noreferrer" className="flex flex-col items-center justify-center gap-2 bg-[#1C1C1E] hover:bg-[#2C2C2E] p-4 rounded-2xl transition-colors">
               <Tv className="w-6 h-6 text-white" />
               <span className="text-[10px] text-white/70 font-medium">Saluran</span>
             </a>
