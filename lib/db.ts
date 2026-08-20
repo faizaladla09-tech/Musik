@@ -80,7 +80,9 @@ export const db = {
   },
   async addPlaylist(playlist: { id: string; name: string; img: string; tracks: Track[] }) {
     const db = await dbPromise;
-    return db.put('playlists', playlist);
+    const result = await db.put('playlists', playlist);
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('playlistsUpdated'));
+    return result;
   },
   async getPlaylist(id: string) {
     const db = await dbPromise;
@@ -88,7 +90,9 @@ export const db = {
   },
   async deletePlaylist(id: string) {
     const db = await dbPromise;
-    return db.delete('playlists', id);
+    const result = await db.delete('playlists', id);
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('playlistsUpdated'));
+    return result;
   },
   async getLikedSongs() {
     const db = await dbPromise;
