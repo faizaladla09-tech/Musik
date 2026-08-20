@@ -22,8 +22,8 @@ export default function AlbumTrackClient({ track, index, album, artistName }: { 
           className="text-white/60 text-sm" 
         />
       </div>
-      <button className="p-2 text-white/60 hover:text-white transition-colors">
-        <MoreVertical className="w-5 h-5" />
+      <button className="w-8 h-8 rounded-full liquid-glass-icon flex items-center justify-center text-white/60 hover:text-white transition-all">
+        <MoreVertical className="w-4 h-4" />
       </button>
     </div>
   );
