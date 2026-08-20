@@ -1,20 +1,71 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Track, usePlayerStore } from '@/lib/store';
-import { Loader2, History, Cast, User, Play, MoreVertical } from 'lucide-react';
-import Image from 'next/image';
+import { 
+  Play, 
+  MoreVertical, 
+  Radio, 
+  Sparkles, 
+  RefreshCw, 
+  Compass, 
+  Flame, 
+  TrendingUp,
+  Disc3
+} from 'lucide-react';
+import { SmoothImage } from '@/components/SmoothImage';
 import { HorizontalScroll } from '@/components/HorizontalScroll';
 import { MixedScroll } from '@/components/MixedScroll';
 import { CommunityPlaylistCard } from '@/components/CommunityPlaylistCard';
 import { MarqueeText } from '@/components/MarqueeText';
 import { getHighResImage } from '@/lib/utils';
-import { motion } from 'motion/react';
+import { motion, Variants } from 'motion/react';
 import Link from 'next/link';
-
 import { HomeSkeleton } from '@/components/HomeSkeleton';
 
-const pills = ['Chill', 'Focus', 'Commute', 'Gaming', 'Energize', 'Party', 'Feel good', 'Romance', 'Workout', 'Sleep', 'Sad', 'Happy', 'Nostalgia', 'Acoustic', 'Pop', 'Rock'];
+interface MoodCategory {
+  id: string;
+  name: string;
+  query: string;
+  icon?: string;
+}
+
+const METROLIST_MOODS: MoodCategory[] = [
+  { id: 'all', name: 'Semua', query: '' },
+  { id: 'chill', name: 'Santai', query: 'lagu santai akustik chill indonesia' },
+  { id: 'focus', name: 'Fokus', query: 'lofi study focus deep instrumental' },
+  { id: 'commute', name: 'Perjalanan', query: 'roadtrip music commute songs indonesia' },
+  { id: 'workout', name: 'Olahraga', query: 'workout gym pump up energy hits' },
+  { id: 'energize', name: 'Energi', query: 'upbeat pop dance semangat hits' },
+  { id: 'party', name: 'Pesta', query: 'party dance club remix songs' },
+  { id: 'romance', name: 'Romantis', query: 'lagu cinta romantis indonesia terbaik' },
+  { id: 'sleep', name: 'Tidur', query: 'relaxing sleep piano rain peaceful' },
+  { id: 'nostalgia', name: 'Nostalgia', query: 'lagu nostalgia 90an 2000an indonesia' },
+  { id: 'acoustic', name: 'Akustik', query: 'lagu akustik cafe santai indonesia' },
+  { id: 'pop', name: 'Pop Hits', query: 'top hits pop indonesia 2024 terbaru' },
+  { id: 'rock', name: 'Rock', query: 'lagu rock indonesia terbaik alternative' },
+  { id: 'jedagjedug', name: 'Jedag Jedug', query: 'lagu fyp tiktok remix jedag jedug' },
+];
+
+const containerVariants: Variants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.06,
+      delayChildren: 0.02,
+    },
+  },
+};
+
+const sectionVariants: Variants = {
+  hidden: { opacity: 0, y: 14 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: { type: 'spring', damping: 24, stiffness: 260 },
+  },
+};
 
 export default function Home() {
   const [heroTracks, setHeroTracks] = useState<Track[]>([]);
@@ -24,365 +75,418 @@ export default function Home() {
   const [artists, setArtists] = useState<any[]>([]);
   const [categories, setCategories] = useState<{ key: string; title: string; type: 'song' | 'mixed'; items: any[] }[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeFilter, setActiveFilter] = useState<string | null>(null);
-  const [filterData, setFilterData] = useState<{ title: string; tracks: Track[] }[]>([]);
-  const [loadingFilter, setLoadingFilter] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  const [activeMoodId, setActiveMoodId] = useState<string>('all');
+  const [moodFilterData, setMoodFilterData] = useState<{ title: string; tracks: Track[] }[]>([]);
+  const [loadingMood, setLoadingMood] = useState(false);
+  
   const playTrack = usePlayerStore((state) => state.playTrack);
+  const setTrackToAdd = usePlayerStore((state) => state.setTrackToAdd);
   const history = usePlayerStore((state) => state.history);
 
+  // Abort controllers for cleaning up in-flight requests
+  const homeAbortRef = useRef<AbortController | null>(null);
+  const moodAbortRef = useRef<AbortController | null>(null);
+
+  const [greeting, setGreeting] = useState({ 
+    title: 'Selamat Datang', 
+    sub: 'Mulai harimu dengan musik favorit' 
+  });
+
+  // Metrolist Dynamic Time-based Greeting
   useEffect(() => {
-    if (!activeFilter) return;
-    const fetchFilterData = async () => {
-      setLoadingFilter(true);
+    const hour = new Date().getHours();
+    if (hour >= 4 && hour < 11) {
+      setGreeting({ title: 'Selamat Pagi', sub: 'Mulai harimu dengan musik favorit' });
+    } else if (hour >= 11 && hour < 15) {
+      setGreeting({ title: 'Selamat Siang', sub: 'Temani harimu dengan irama terbaik' });
+    } else if (hour >= 15 && hour < 18) {
+      setGreeting({ title: 'Selamat Sore', sub: 'Santai sejenak di sore hari' });
+    } else {
+      setGreeting({ title: 'Selamat Malam', sub: 'Irama tenang untuk malam harimu' });
+    }
+  }, []);
+
+  // Metrolist "Dengarkan Lagi" (Listen Again / Forgotten Favorites from History)
+  const listenAgainTracks = useMemo(() => {
+    if (!history || history.length === 0) return [];
+    const seen = new Set<string>();
+    const unique: Track[] = [];
+    for (const item of history) {
+      if (item.track && item.track.videoId && !seen.has(item.track.videoId)) {
+        seen.add(item.track.videoId);
+        unique.push(item.track);
+      }
+      if (unique.length >= 16) break;
+    }
+    return unique;
+  }, [history]);
+
+  // Fetch Mood Specific Data with AbortController
+  useEffect(() => {
+    if (activeMoodId === 'all') {
+      setMoodFilterData([]);
+      return;
+    }
+
+    const selectedMood = METROLIST_MOODS.find((m) => m.id === activeMoodId);
+    if (!selectedMood) return;
+
+    if (moodAbortRef.current) {
+      moodAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    moodAbortRef.current = controller;
+
+    const fetchMoodData = async () => {
+      setLoadingMood(true);
       try {
         const queries = [
-          { title: `Feeling ${activeFilter.toLowerCase()}`, q: `${activeFilter} mood songs` },
-          { title: `${activeFilter} hits`, q: `top ${activeFilter} songs` },
-          { title: `More like ${activeFilter}`, q: `best ${activeFilter} tracks` },
+          { title: `Pilihan ${selectedMood.name}`, q: selectedMood.query },
+          { title: `Hits ${selectedMood.name}`, q: `top ${selectedMood.name} songs` },
+          { title: `Suasana ${selectedMood.name}`, q: `best ${selectedMood.name} mix` },
         ];
-        
+
         const results = [];
         for (const { title, q } of queries) {
-          const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&type=song`);
-          const data = await res.json();
-          results.push({ title, tracks: data.slice(0, 10) });
+          if (controller.signal.aborted) break;
+          const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&type=song`, {
+            signal: controller.signal,
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data) && data.length > 0) {
+              results.push({ title, tracks: data.slice(0, 10) });
+            }
+          }
         }
-        
-        setFilterData(results);
-      } catch (error) {
-        console.error(error);
+
+        if (!controller.signal.aborted) {
+          setMoodFilterData(results);
+        }
+      } catch (error: any) {
+        if (error.name !== 'AbortError') {
+          console.warn('Failed to fetch mood data:', error);
+        }
       } finally {
-        setLoadingFilter(false);
+        if (!controller.signal.aborted) {
+          setLoadingMood(false);
+        }
       }
     };
-    fetchFilterData();
-  }, [activeFilter]);
 
-  useEffect(() => {
-    const fetchHomeData = async () => {
-      try {
-        const queries: { key: string; title?: string; q: string; type?: string }[] = [
-          { key: 'hero', q: 'dave how i met my ex', type: 'song' },
-          { key: 'speedDial', q: 'top hits 2024', type: 'song' },
-          { key: 'quickPicks', q: 'viral hits indonesia', type: 'song' },
-          { key: 'community', q: 'chill playlists', type: 'playlist' },
-          { key: 'artists', q: 'artis indonesia populer', type: 'artist' },
-        ];
+    fetchMoodData();
 
-        // Add default categories
-        const defaultCategories = [
-          { key: 'cat0', title: 'Trending Now', q: 'lagu indonesia hits terbaru', type: 'song' },
-          { key: 'cat1', title: 'New Releases', q: 'lagu pop indonesia rilis terbaru', type: 'song' },
-          { key: 'similar0', title: 'Serupa dengan Ryuuuchiee', q: 'Ryuuuchiee', type: 'all' },
-          { key: 'similar1', title: 'Serupa dengan Tems', q: 'Tems', type: 'all' },
-          { key: 'similar2', title: 'Serupa dengan Hindia', q: 'Hindia', type: 'all' },
-          { key: 'similar3', title: 'Serupa dengan Nadin Amizah', q: 'Nadin Amizah', type: 'all' },
-          { key: 'similar4', title: 'Serupa dengan Pamungkas', q: 'Pamungkas', type: 'all' },
-          { key: 'cat2', title: 'Top 50 Indonesia', q: 'top 50 indonesia playlist update', type: 'song' },
-          { key: 'cat3', title: 'Viral on TikTok', q: 'lagu fyp tiktok viral', type: 'song' },
-          { key: 'cat4', title: 'For Eid Getaways', q: 'lagu lebaran idul fitri', type: 'song' },
-          { key: 'cat5', title: 'Surrender to the Beat', q: 'lagu edm jedag jedug', type: 'song' },
-          { key: 'cat6', title: 'Fun throwbacks', q: 'lagu nostalgia 2000an indonesia', type: 'song' },
-          { key: 'cat7', title: 'Feel-good rock', q: 'lagu rock indonesia terbaik', type: 'song' },
-          { key: 'cat8', title: 'Acoustic Chill', q: 'lagu akustik cafe santai', type: 'song' },
-        ];
-        
-        queries.push(...defaultCategories);
+    return () => {
+      controller.abort();
+    };
+  }, [activeMoodId]);
 
-        // Process in chunks of 3 to avoid 403 errors from too many parallel requests
-        const results = [];
-        for (let i = 0; i < queries.length; i += 3) {
-          const chunk = queries.slice(i, i + 3);
-          const chunkResults = await Promise.all(
-            chunk.map(async ({ key, title, q, type }) => {
-              try {
-                const url = type 
-                  ? `/api/search?q=${encodeURIComponent(q)}&type=${type}`
-                  : `/api/search?q=${encodeURIComponent(q)}`;
-                const res = await fetch(url);
-                if (!res.ok) return { key, title, data: [] };
-                const data = await res.json();
-                return { key, title, data };
-              } catch (e) {
-                return { key, title, data: [] };
-              }
-            })
-          );
-          results.push(...chunkResults);
-        }
+  // Main Home Data Fetching (Independent of history mutations to prevent continuous re-fetch loops)
+  const fetchHomeData = useCallback(async (showRefreshingSpinner = false) => {
+    if (homeAbortRef.current) {
+      homeAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    homeAbortRef.current = controller;
 
-        const cats: { key: string; title: string; type: 'song' | 'mixed'; items: any[] }[] = [];
+    if (showRefreshingSpinner) setIsRefreshing(true);
+    try {
+      const queries: { key: string; title?: string; q: string; type?: string }[] = [
+        { key: 'hero', q: 'dave how i met my ex', type: 'song' },
+        { key: 'speedDial', q: 'top hits indonesia viral', type: 'song' },
+        { key: 'quickPicks', q: 'lagu populer viral indonesia', type: 'song' },
+        { key: 'community', q: 'chill aesthetic playlists indonesia', type: 'playlist' },
+        { key: 'artists', q: 'artis indonesia populer', type: 'artist' },
+      ];
 
-        results.forEach(({ key, title, data }) => {
-          if (!data || data.length === 0) return;
-          if (key === 'hero') setHeroTracks(data.slice(0, 3));
-          else if (key === 'speedDial') setSpeedDialTracks(data.slice(0, 45));
-          else if (key === 'quickPicks') setQuickPicksTracks(data.slice(0, 20));
-          else if (key === 'community') setCommunityPlaylists(data.slice(0, 10));
-          else if (key === 'artists') setArtists(data.slice(0, 10));
-          else if (key.startsWith('cat') && title) cats.push({ key, title, type: 'song', items: data.slice(0, 10) });
-          else if (key.startsWith('similar') && title) cats.push({ key, title, type: 'mixed', items: data.slice(0, 10) });
-        });
+      const defaultCategories = [
+        { key: 'cat0', title: 'Trending Sekarang', q: 'lagu indonesia hits terbaru 2024', type: 'song' },
+        { key: 'cat1', title: 'Rilis Terbaru & Populer', q: 'lagu pop indonesia rilis terbaru', type: 'song' },
+        { key: 'similar0', title: 'Serupa dengan Hindia', q: 'Hindia', type: 'all' },
+        { key: 'similar1', title: 'Serupa dengan Nadin Amizah', q: 'Nadin Amizah', type: 'all' },
+        { key: 'similar2', title: 'Serupa dengan Bernadya', q: 'Bernadya', type: 'all' },
+        { key: 'cat2', title: 'Top 50 Indonesia', q: 'top 50 indonesia update', type: 'song' },
+        { key: 'cat3', title: 'Viral di TikTok', q: 'lagu fyp tiktok viral jedag jedug', type: 'song' },
+        { key: 'cat4', title: 'Santai & Akustik', q: 'lagu akustik cafe santai indonesia', type: 'song' },
+        { key: 'cat5', title: 'Nostalgia Indonesia', q: 'lagu nostalgia indonesia 2000an', type: 'song' },
+      ];
 
-        // Sort categories to maintain the order defined in defaultCategories
-        const orderMap = new Map(defaultCategories.map((c, i) => [c.key, i]));
-        cats.sort((a, b) => (orderMap.get(a.key) ?? 999) - (orderMap.get(b.key) ?? 999));
+      queries.push(...defaultCategories);
 
-        setCategories(cats);
-      } catch (error) {
-        console.error('Failed to fetch home data:', error);
-      } finally {
+      // Process in chunks to prevent connection choking
+      const results = [];
+      for (let i = 0; i < queries.length; i += 3) {
+        if (controller.signal.aborted) break;
+        const chunk = queries.slice(i, i + 3);
+        const chunkResults = await Promise.all(
+          chunk.map(async ({ key, title, q, type }) => {
+            try {
+              const url = type
+                ? `/api/search?q=${encodeURIComponent(q)}&type=${type}`
+                : `/api/search?q=${encodeURIComponent(q)}`;
+              const res = await fetch(url, { signal: controller.signal });
+              if (!res.ok) return { key, title, data: [] };
+              const data = await res.json();
+              return { key, title, data: Array.isArray(data) ? data : [] };
+            } catch (e: any) {
+              return { key, title, data: [] };
+            }
+          })
+        );
+        results.push(...chunkResults);
+      }
+
+      if (controller.signal.aborted) return;
+
+      const cats: { key: string; title: string; type: 'song' | 'mixed'; items: any[] }[] = [];
+
+      results.forEach(({ key, title, data }) => {
+        if (!data || data.length === 0) return;
+        if (key === 'hero') setHeroTracks(data.slice(0, 4));
+        else if (key === 'speedDial') setSpeedDialTracks(data.slice(0, 45));
+        else if (key === 'quickPicks') setQuickPicksTracks(data.slice(0, 20));
+        else if (key === 'community') setCommunityPlaylists(data.slice(0, 10));
+        else if (key === 'artists') setArtists(data.slice(0, 10));
+        else if (key.startsWith('cat') && title) cats.push({ key, title, type: 'song', items: data.slice(0, 10) });
+        else if (key.startsWith('similar') && title) cats.push({ key, title, type: 'mixed', items: data.slice(0, 10) });
+      });
+
+      const orderMap = new Map(defaultCategories.map((c, i) => [c.key, i]));
+      cats.sort((a, b) => (orderMap.get(a.key) ?? 999) - (orderMap.get(b.key) ?? 999));
+
+      setCategories(cats);
+    } catch (error: any) {
+      if (error.name !== 'AbortError') {
+        console.warn('Failed to fetch home data:', error);
+      }
+    } finally {
+      if (!controller.signal.aborted) {
         setLoading(false);
+        setIsRefreshing(false);
       }
-    };
+    }
+  }, []);
 
+  // Initial load
+  useEffect(() => {
     fetchHomeData();
-    
-    const handleFocus = () => {
-      fetchHomeData();
+    return () => {
+      if (homeAbortRef.current) homeAbortRef.current.abort();
+      if (moodAbortRef.current) moodAbortRef.current.abort();
     };
-    
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
-  }, [history[0]?.track?.videoId]);
+  }, [fetchHomeData]);
+
+  // Handle Quick Radio Launcher
+  const handleStartQuickRadio = useCallback((track: Track, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    playTrack(track, [], 'similar');
+  }, [playTrack]);
 
   return (
-    <main className="min-h-screen pt-6 pb-24">
-      <div className="flex items-center justify-between px-4 mb-4">
-        <h1 className="text-2xl font-bold text-white">Beranda</h1>
-        <div className="flex items-center gap-4 text-white/80">
-          <Link href="/history" className="hover:text-white transition-colors">
-            <History className="w-6 h-6" />
-          </Link>
-          <Cast className="w-6 h-6" />
-          <div className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center relative">
-            <Image src="https://f.top4top.io/p_3733w0g4e0.jpg" alt="Developer Profile" fill sizes="32px" className="object-cover" />
+    <main className="min-h-screen pt-4 pb-32 overflow-x-hidden">
+      {/* Metrolist Header with Greeting & Quick Actions */}
+      <motion.div 
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, ease: 'easeOut' }}
+        className="flex items-center justify-between px-4 mb-4"
+      >
+        <div className="min-w-0 flex-1 pr-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-[#81B29A] flex items-center gap-1">
+              <Sparkles className="w-3.5 h-3.5" /> Musicfly
+            </span>
           </div>
+          <h1 suppressHydrationWarning className="text-2xl font-black text-white leading-tight mt-0.5 tracking-tight">
+            {greeting.title}
+          </h1>
+          <p suppressHydrationWarning className="text-xs text-white/60 truncate mt-0.5">{greeting.sub}</p>
         </div>
-      </div>
 
-      <div className="flex overflow-x-auto no-scrollbar gap-3 px-4 mb-4 snap-x snap-mandatory scroll-smooth">
-        {pills.map((pill) => (
-          <button 
-            key={pill} 
-            onClick={() => setActiveFilter(activeFilter === pill ? null : pill)}
-            className={`whitespace-nowrap px-5 py-2 rounded-full text-sm font-medium transition-colors border snap-center ${
-              activeFilter === pill 
-                ? 'bg-white text-black border-white' 
-                : 'bg-white/10 hover:bg-white/20 text-white border-white/5'
-            }`}
+        <div className="flex items-center gap-2.5 shrink-0">
+          <button
+            onClick={() => fetchHomeData(true)}
+            disabled={isRefreshing}
+            className="w-10 h-10 rounded-full liquid-glass-icon flex items-center justify-center text-white/90 hover:text-white hover:scale-105 active:scale-95 transition-all shadow-md"
+            title="Segarkan Beranda"
           >
-            {pill}
+            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-[#81B29A]' : ''}`} />
           </button>
-        ))}
+        </div>
+      </motion.div>
+
+      {/* Mood Pills (Metrolist Chip Carousel) */}
+      <div className="flex overflow-x-auto no-scrollbar gap-2 px-4 pr-8 mb-6 snap-x snap-mandatory scroll-smooth w-full">
+        {METROLIST_MOODS.map((mood) => {
+          const isActive = activeMoodId === mood.id;
+          return (
+            <motion.button
+              key={mood.id}
+              onClick={() => setActiveMoodId(mood.id)}
+              whileTap={{ scale: 0.94 }}
+              className={`whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold tracking-wide transition-all snap-center shadow-sm ${
+                isActive 
+                  ? 'bg-white text-zinc-950 shadow-md shadow-white/10' 
+                  : 'liquid-glass-pill text-white/80 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              {mood.name}
+            </motion.button>
+          );
+        })}
       </div>
 
-      {loading || (activeFilter && loadingFilter) ? (
+      {loading ? (
         <HomeSkeleton />
-      ) : activeFilter ? (
-        <div className="space-y-10">
-          {filterData.map((cat, i) => (
-            <HorizontalScroll key={i} title={cat.title} tracks={cat.tracks} />
-          ))}
-          
-          <div className="px-4 mb-8">
-            <h2 className="text-xl font-bold text-white mb-4">Suasana Hati dan Genre</h2>
-            <div className="grid grid-rows-2 grid-flow-col gap-3 overflow-x-auto no-scrollbar pb-4 snap-x snap-mandatory">
-              {pills.map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setActiveFilter(p)}
-                  className="bg-[#1C1C1E] hover:bg-white/10 text-white font-medium py-3 px-4 rounded-lg text-left transition-colors border border-white/5 min-w-[160px] snap-center"
-                >
-                  <span className="text-sm">{p}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
       ) : (
-        <div className="space-y-10">
-          {heroTracks.length > 0 && (
-            <div className="flex overflow-x-auto no-scrollbar gap-4 px-4 snap-x snap-mandatory scroll-smooth pb-4">
-              {heroTracks.map((track, i) => (
-                <motion.div 
-                  key={`hero-${track.videoId}-${i}`}
-                  initial={{ opacity: 0, x: 20 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true, amount: 0.1 }}
-                  transition={{ duration: 0.3, ease: "easeOut" }}
-                  className="relative w-[85vw] sm:w-[400px] shrink-0 aspect-[4/5] sm:aspect-video rounded-3xl overflow-hidden cursor-pointer group shadow-2xl snap-center hover:scale-[1.02] active:scale-[0.98] transition-transform duration-200"
-                  onClick={() => playTrack(track, heroTracks, 'similar')}
-                >
-                  <Image 
-                    src={getHighResImage(track.thumbnails?.[track.thumbnails.length - 1]?.url, 800)} 
-                    alt={track.name} 
-                    fill 
-                    sizes="(max-width: 640px) 85vw, 400px"
-                    className="object-cover group-hover:scale-105 transition-transform duration-700" 
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
-                  <div className="absolute top-4 left-4 right-4">
-                    <MarqueeText text={track.name} className="text-2xl font-bold text-white drop-shadow-lg" />
-                    <MarqueeText 
-                      text={Array.isArray(track.artist) ? track.artist.map(a => a.name).join(', ') : track.artist?.name} 
-                      className="text-white/80 font-medium drop-shadow-md" 
-                    />
+        <motion.div 
+          variants={containerVariants}
+          initial="hidden"
+          animate="show"
+          className="space-y-6"
+        >
+          {/* Mood Filter View */}
+          {activeMoodId !== 'all' ? (
+            <div className="px-4 space-y-6">
+              {loadingMood ? (
+                <div className="flex items-center justify-center py-20 text-white/60 gap-3">
+                  <RefreshCw className="w-5 h-5 animate-spin text-[#81B29A]" />
+                  <span className="text-sm font-medium">Memuat rekomendasi suasana...</span>
+                </div>
+              ) : moodFilterData.length > 0 ? (
+                moodFilterData.map((section, idx) => (
+                  <HorizontalScroll key={idx} title={section.title} tracks={section.tracks} />
+                ))
+              ) : (
+                <div className="text-center py-16 text-white/50 text-sm">
+                  Tidak ada lagu yang ditemukan untuk kategori ini.
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              {/* Metrolist Speed Dial (3-row compact grid) */}
+              {speedDialTracks.length > 0 && (
+                <motion.div variants={sectionVariants} className="mb-6">
+                  <div className="flex items-center justify-between mb-3 px-4">
+                    <h2 className="text-xl font-extrabold text-white tracking-tight flex items-center gap-2">
+                      <TrendingUp className="w-5 h-5 text-[#81B29A]" /> Pilihan Cepat Untukmu
+                    </h2>
                   </div>
-                  <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
-                    <MarqueeText text="Sounds like Raindance • Dave, Tems" className="text-sm text-white/60 pr-4" />
-                    <div className="w-12 h-12 bg-[#FA243C] rounded-full flex items-center justify-center shadow-lg shadow-[#FA243C]/30 transform translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300">
-                      <Play className="w-6 h-6 text-white ml-1 fill-current" />
-                    </div>
+                  
+                  <div className="flex overflow-x-auto no-scrollbar gap-3 px-4 pr-8 snap-x snap-mandatory scroll-smooth w-full">
+                    {Array.from({ length: Math.ceil(speedDialTracks.length / 3) }).map((_, colIndex) => {
+                      const colTracks = speedDialTracks.slice(colIndex * 3, colIndex * 3 + 3);
+                      return (
+                        <div key={colIndex} className="flex flex-col gap-2 flex-none w-[280px] sm:w-[320px] snap-start">
+                          {colTracks.map((track) => {
+                            const thumbnail = getHighResImage(track.thumbnails?.[track.thumbnails.length - 1]?.url, 120);
+                            const artistName = Array.isArray(track.artist) ? track.artist.map(a => a.name).join(', ') : track.artist?.name || 'Artis';
+
+                            return (
+                              <div
+                                key={track.videoId}
+                                onClick={() => playTrack(track, speedDialTracks)}
+                                className="flex items-center p-2 rounded-2xl liquid-glass-subtle hover:bg-white/10 active:scale-[0.98] transition-all cursor-pointer group border border-white/5"
+                              >
+                                <div className="relative w-12 h-12 rounded-xl overflow-hidden shrink-0 bg-white/5 shadow-sm">
+                                  <SmoothImage src={thumbnail} alt={track.name} fill sizes="48px" className="object-cover" />
+                                </div>
+                                <div className="ml-3 flex-1 min-w-0 pr-1">
+                                  <MarqueeText text={track.name} className="text-xs font-bold text-white leading-tight" />
+                                  <MarqueeText text={artistName} className="text-[11px] text-white/50 mt-0.5" />
+                                </div>
+                                <button
+                                  onClick={(e) => handleStartQuickRadio(track, e)}
+                                  className="w-8 h-8 rounded-full liquid-glass-icon flex items-center justify-center text-white/60 hover:text-white shrink-0 ml-1"
+                                  title="Mulai Radio dari Lagu Ini"
+                                >
+                                  <Radio className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
                   </div>
                 </motion.div>
+              )}
+
+              {/* Metrolist "Dengarkan Lagi" (Listen Again from history) */}
+              {listenAgainTracks.length > 0 && (
+                <motion.div variants={sectionVariants}>
+                  <HorizontalScroll title="Dengarkan Lagi" tracks={listenAgainTracks} />
+                </motion.div>
+              )}
+
+              {/* Quick Picks Carousel */}
+              {quickPicksTracks.length > 0 && (
+                <motion.div variants={sectionVariants}>
+                  <HorizontalScroll title="Pilihan Terpopuler Hari Ini" tracks={quickPicksTracks} />
+                </motion.div>
+              )}
+
+              {/* Dynamic Categories & Mixed recommendations */}
+              {categories.map((category) => (
+                <motion.div key={category.key} variants={sectionVariants}>
+                  {category.type === 'song' ? (
+                    <HorizontalScroll title={category.title} tracks={category.items} />
+                  ) : (
+                    <MixedScroll title={category.title} items={category.items} />
+                  )}
+                </motion.div>
               ))}
-            </div>
-          )}
 
-          {speedDialTracks.length > 0 && (
-            <div className="px-4">
-              <h2 className="text-2xl font-bold text-white mb-4">Speed dial</h2>
-              <div className="flex overflow-x-auto no-scrollbar gap-4 snap-x snap-mandatory scroll-smooth pb-4">
-                {Array.from({ length: Math.ceil(speedDialTracks.length / 9) }).map((_, i) => {
-                  const chunk = speedDialTracks.slice(i * 9, i * 9 + 9);
-                  return (
-                    <motion.div 
-                      key={`speeddial-chunk-${i}`}
-                      initial={{ opacity: 0, x: 20 }}
-                      whileInView={{ opacity: 1, x: 0 }}
-                      viewport={{ once: true, amount: 0.1 }}
-                      transition={{ duration: 0.3, ease: "easeOut" }}
-                      className="w-[85vw] sm:w-[400px] shrink-0 snap-center grid grid-cols-3 gap-2"
-                    >
-                      {chunk.map((track, j) => (
-                        <div 
-                          key={`speeddial-${track.videoId}-${j}`}
-                          className="relative aspect-square rounded-lg overflow-hidden cursor-pointer group hover:scale-[1.02] active:scale-[0.98] transition-transform duration-200"
-                          onClick={() => playTrack(track, speedDialTracks, 'similar')}
+              {/* Community Playlists */}
+              {communityPlaylists.length > 0 && (
+                <motion.div variants={sectionVariants} className="mb-8">
+                  <div className="flex items-center justify-between mb-3 px-4">
+                    <h2 className="text-xl font-extrabold text-white tracking-tight flex items-center gap-2">
+                      <Disc3 className="w-5 h-5 text-[#81B29A]" /> Playlist Komunitas
+                    </h2>
+                  </div>
+                  <div className="flex overflow-x-auto no-scrollbar gap-4 px-4 pr-8 pb-3 snap-x snap-mandatory scroll-smooth w-full">
+                    {communityPlaylists.map((playlist, idx) => (
+                      <CommunityPlaylistCard key={playlist.playlistId || idx} playlistId={playlist.playlistId} />
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+
+              {/* Popular Artists */}
+              {artists.length > 0 && (
+                <motion.div variants={sectionVariants} className="mb-8">
+                  <div className="flex items-center justify-between mb-3 px-4">
+                    <h2 className="text-xl font-extrabold text-white tracking-tight flex items-center gap-2">
+                      <Sparkles className="w-5 h-5 text-[#81B29A]" /> Artis Populer
+                    </h2>
+                  </div>
+                  <div className="flex overflow-x-auto no-scrollbar gap-4 px-4 pr-8 pb-3 snap-x snap-mandatory scroll-smooth w-full">
+                    {artists.map((artist, idx) => {
+                      const thumb = getHighResImage(artist.thumbnails?.[artist.thumbnails.length - 1]?.url, 200);
+                      return (
+                        <Link 
+                          key={artist.artistId || idx} 
+                          href={`/artist/${artist.artistId}`}
+                          className="flex flex-col items-center flex-none w-28 group snap-start cursor-pointer"
                         >
-                          <Image src={getHighResImage(track.thumbnails?.[track.thumbnails.length - 1]?.url, 200)} alt={track.name} fill sizes="64px" className="object-cover" />
-                          <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors" />
-                          <div className="absolute bottom-2 left-2 right-2">
-                            <MarqueeText text={track.name} className="text-white text-xs font-medium drop-shadow-md" />
+                          <div className="relative w-24 h-24 rounded-full overflow-hidden mb-2.5 shadow-lg bg-white/5 border border-white/10 group-hover:scale-105 group-hover:border-white/25 transition-all">
+                            <SmoothImage src={thumb} alt={artist.name} fill sizes="96px" className="object-cover" />
                           </div>
-                        </div>
-                      ))}
-                    </motion.div>
-                  );
-                })}
-              </div>
-            </div>
+                          <MarqueeText text={artist.name} className="text-xs font-bold text-white text-center w-full" />
+                          <span className="text-[10px] text-white/50">Artis</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              )}
+            </>
           )}
-
-          {quickPicksTracks.length > 0 && (
-            <div className="px-4">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-2xl font-bold text-white">Pilihan cepat</h2>
-                <button 
-                  className="text-sm font-medium text-white/80 hover:text-white border border-white/20 rounded-full px-4 py-1.5 transition-colors"
-                  onClick={() => playTrack(quickPicksTracks[0], quickPicksTracks, 'similar')}
-                >
-                  Putar semua
-                </button>
-              </div>
-              <div className="flex overflow-x-auto no-scrollbar gap-4 snap-x snap-mandatory scroll-smooth pb-4">
-                {Array.from({ length: Math.ceil(quickPicksTracks.length / 4) }).map((_, i) => {
-                  const chunk = quickPicksTracks.slice(i * 4, i * 4 + 4);
-                  return (
-                    <motion.div 
-                      key={`quickpicks-chunk-${i}`}
-                      initial={{ opacity: 0, x: 20 }}
-                      whileInView={{ opacity: 1, x: 0 }}
-                      viewport={{ once: true, amount: 0.1 }}
-                      transition={{ duration: 0.3, ease: "easeOut" }}
-                      className="w-[85vw] sm:w-[400px] shrink-0 snap-center flex flex-col gap-3"
-                    >
-                      {chunk.map((track, j) => (
-                        <div 
-                          key={`quickpicks-${track.videoId}-${j}`}
-                          className="flex items-center gap-3 cursor-pointer group hover:bg-white/5 p-2 -mx-2 rounded-xl active:scale-[0.98] transition-all duration-200"
-                          onClick={() => playTrack(track, quickPicksTracks, 'similar')}
-                        >
-                          <div className="relative w-12 h-12 rounded-md overflow-hidden shrink-0">
-                            <Image src={getHighResImage(track.thumbnails?.[track.thumbnails.length - 1]?.url, 100)} alt={track.name} fill sizes="48px" className="object-cover" />
-                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                              <Play className="w-5 h-5 text-white fill-current" />
-                            </div>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <MarqueeText text={track.name} className="text-white font-medium text-base" />
-                            <MarqueeText 
-                              text={Array.isArray(track.artist) ? track.artist.map(a => a.name).join(', ') : track.artist?.name} 
-                              className="text-white/60 text-sm" 
-                            />
-                          </div>
-                          <button className="p-2 text-white/60 hover:text-white transition-colors">
-                            <MoreVertical className="w-5 h-5" />
-                          </button>
-                        </div>
-                      ))}
-                    </motion.div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {communityPlaylists.length > 0 && (
-            <div className="px-4">
-              <h2 className="text-2xl font-bold text-[#81B29A] mb-4">From the community</h2>
-              <div className="flex overflow-x-auto no-scrollbar gap-4 snap-x snap-mandatory scroll-smooth pb-4">
-                {communityPlaylists.map((playlist, i) => {
-                  const id = playlist.playlistId;
-                  if (!id) return null;
-                  return <CommunityPlaylistCard key={`community-playlist-${id}-${i}`} playlistId={id} />;
-                })}
-              </div>
-            </div>
-          )}
-
-          {artists.length > 0 && (
-            <div className="mb-8">
-              <h2 className="text-xl font-bold text-white mb-4 px-4">Tetap mendengarkan</h2>
-              <div className="flex overflow-x-auto no-scrollbar gap-6 px-4 pb-4 snap-x snap-mandatory scroll-smooth">
-                {artists.map((artist, i) => {
-                  const artistName = artist.name || 'Artist';
-                  return (
-                    <Link href={`/artist/${artist.artistId}`} key={`artist-${artist.artistId}-${i}`}>
-                      <motion.div
-                        initial={{ opacity: 0, x: 20 }}
-                        whileInView={{ opacity: 1, x: 0 }}
-                        viewport={{ once: true, amount: 0.1 }}
-                        transition={{ duration: 0.3, ease: "easeOut" }}
-                        className="flex flex-col items-center gap-3 cursor-pointer group shrink-0 snap-center hover:scale-105 active:scale-95 transition-transform duration-200"
-                      >
-                        <div className="relative w-28 h-28 rounded-full overflow-hidden shadow-lg transition-transform duration-300">
-                          <Image src={getHighResImage(artist.thumbnails?.[artist.thumbnails.length - 1]?.url, 400)} alt={artistName} fill sizes="144px" className="object-cover" />
-                          <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                            <Play className="w-8 h-8 text-white fill-current" />
-                          </div>
-                        </div>
-                        <div className="text-center w-full">
-                          <MarqueeText text={artistName} className="text-sm font-medium text-white" />
-                          <div className="text-xs text-white/50">Artis</div>
-                        </div>
-                      </motion.div>
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {categories.map((cat, i) => (
-            cat.type === 'mixed' ? (
-              <MixedScroll key={i} title={cat.title} items={cat.items} />
-            ) : (
-              <HorizontalScroll key={i} title={cat.title} tracks={cat.items} />
-            )
-          ))}
-        </div>
+        </motion.div>
       )}
     </main>
   );
