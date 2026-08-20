@@ -1,9 +1,10 @@
 'use client';
 
-import { Play, Shuffle, MoreVertical, Heart, BookmarkPlus, BookmarkCheck } from 'lucide-react';
+import { Play, Shuffle, BookmarkPlus, BookmarkCheck } from 'lucide-react';
 import { usePlayerStore } from '@/lib/store';
 import { db } from '@/lib/db';
 import { useState, useEffect } from 'react';
+import { motion } from 'motion/react';
 
 export default function AlbumClient({ album }: { album: any }) {
   const playTrack = usePlayerStore((state) => state.playTrack);
@@ -37,24 +38,45 @@ export default function AlbumClient({ album }: { album: any }) {
     }
   };
 
+  const handleShuffle = () => {
+    if (album?.songs?.length > 0) {
+      const shuffled = [...album.songs].sort(() => Math.random() - 0.5);
+      playTrack(shuffled[0], shuffled, 'playlist');
+    }
+  };
+
   return (
-    <div className="flex items-center gap-4">
-      <button 
+    <div className="flex items-center gap-3 justify-center">
+      <motion.button 
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
         onClick={handleSaveAlbum}
-        className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/20 transition-colors"
+        className="w-12 h-12 rounded-full liquid-glass border border-white/15 flex items-center justify-center text-white shadow-md"
         title={isSaved ? "Hapus dari Koleksi" : "Simpan ke Koleksi"}
       >
         {isSaved ? <BookmarkCheck className="w-5 h-5 text-[#81B29A]" /> : <BookmarkPlus className="w-5 h-5 text-white" />}
-      </button>
-      <button 
-        className="w-16 h-16 bg-[#A3C9A8] rounded-full flex items-center justify-center hover:scale-105 transition-transform"
-        onClick={() => album.songs.length > 0 && playTrack(album.songs[0], album.songs)}
+      </motion.button>
+
+      <motion.button 
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        className="h-12 px-7 bg-white text-zinc-950 rounded-full font-bold text-xs flex items-center justify-center gap-2 shadow-xl"
+        onClick={() => album?.songs?.length > 0 && playTrack(album.songs[0], album.songs, 'playlist')}
+        title="Putar Album"
       >
-        <Play className="w-8 h-8 text-black fill-current ml-1" />
-      </button>
-      <button className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/20 transition-colors">
-        <MoreVertical className="w-5 h-5 text-white" />
-      </button>
+        <Play className="w-4 h-4 fill-current ml-0.5" />
+        <span>Putar Album</span>
+      </motion.button>
+
+      <motion.button 
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        onClick={handleShuffle}
+        className="w-12 h-12 rounded-full liquid-glass border border-white/15 flex items-center justify-center text-white shadow-md"
+        title="Acak Album"
+      >
+        <Shuffle className="w-4 h-4" />
+      </motion.button>
     </div>
   );
 }
