@@ -1,7 +1,7 @@
 {
-  "name": "Music App",
-  "short_name": "Music",
-  "description": "Platform streaming musik modern",
+  "name": "Musicfly",
+  "short_name": "Musicfly",
+  "description": "Musicfly - Modern Liquid Glass Music Streaming Platform",
   "start_url": "/",
   "id": "/",
   "display": "standalone",
