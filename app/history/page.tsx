@@ -1,25 +1,48 @@
 'use client';
 
-import { ArrowLeft, Search, MoreVertical } from 'lucide-react';
+import { ArrowLeft, Clock, Trash2, Play, Shuffle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { usePlayerStore } from '@/lib/store';
-import Image from 'next/image';
-import { getHighResImage } from '@/lib/utils';
 import { useEffect, useState } from 'react';
-import { MarqueeText } from '@/components/MarqueeText';
+import { TrackItem } from '@/components/TrackItem';
+import { motion, Variants } from 'motion/react';
+import { ConfirmModal } from '@/components/FeedbackModals';
+
+const containerVariants: Variants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.04,
+      delayChildren: 0.05,
+    },
+  },
+};
+
+const itemVariants: Variants = {
+  hidden: { opacity: 0, y: 12 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: { type: 'spring', damping: 24, stiffness: 280 },
+  },
+};
 
 export default function HistoryPage() {
   const router = useRouter();
   const history = usePlayerStore((state) => state.history);
+  const clearHistory = usePlayerStore((state) => state.clearHistory);
   const playTrack = usePlayerStore((state) => state.playTrack);
   const [mounted, setMounted] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
   }, []);
 
   if (!mounted) return null;
+
+  const historyTracks = history.map(h => h.track);
 
   // Group history by Today, This Week, etc.
   const today = new Date();
@@ -35,95 +58,133 @@ export default function HistoryPage() {
   });
   const olderHistory = history.filter(item => new Date(item.playedAt) < startOfWeek);
 
-  const renderTrackItem = (item: any) => {
-    const track = item.track;
-    const artistName = Array.isArray(track.artist) ? track.artist.map((a: any) => a.name).join(', ') : track.artist?.name || 'Unknown Artist';
-    const thumbnail = getHighResImage(track.thumbnails?.[track.thumbnails.length - 1]?.url, 100);
+  const handlePlayAll = () => {
+    if (historyTracks.length > 0) {
+      playTrack(historyTracks[0], historyTracks, 'playlist');
+    }
+  };
 
-    const formatDuration = (seconds?: number) => {
-      if (!seconds) return '';
-      const m = Math.floor(seconds / 60);
-      const s = Math.floor(seconds % 60);
-      return ` • ${m}:${s.toString().padStart(2, '0')}`;
-    };
-
-    return (
-      <div 
-        key={item.playedAt + track.videoId} 
-        className="flex items-center gap-4 py-2 cursor-pointer hover:bg-white/5 px-4 rounded-xl transition-colors"
-        onClick={() => playTrack(track, history.map(h => h.track))}
-      >
-        <div className="relative w-12 h-12 rounded-md overflow-hidden shrink-0">
-          <Image src={thumbnail} alt={track.name} fill sizes="56px" className="object-cover" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <MarqueeText text={track.name} className="text-white font-medium text-base" />
-          <MarqueeText 
-            text={`${artistName}${formatDuration(track.duration)}`} 
-            className="text-white/60 text-sm" 
-          />
-        </div>
-        <button className="p-2 text-white/60 hover:text-white transition-colors">
-          <MoreVertical className="w-5 h-5" />
-        </button>
-      </div>
-    );
+  const handleShuffle = () => {
+    if (historyTracks.length > 0) {
+      const shuffled = [...historyTracks].sort(() => Math.random() - 0.5);
+      playTrack(shuffled[0], shuffled, 'playlist');
+    }
   };
 
   return (
-    <main className="min-h-screen pb-24">
-      <div className="sticky top-0 z-10 bg-black/50 backdrop-blur-md pt-6 pb-4 px-4 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <button onClick={() => router.back()} className="text-white hover:bg-white/10 p-2 rounded-full transition-colors">
-            <ArrowLeft className="w-6 h-6" />
-          </button>
-          <h1 className="text-xl font-bold text-white">Riwayat</h1>
-        </div>
-        <button className="text-white hover:bg-white/10 p-2 rounded-full transition-colors">
-          <Search className="w-6 h-6" />
-        </button>
+    <main className="min-h-screen pb-32 overflow-x-hidden">
+      {/* Top Header */}
+      <div className="sticky top-0 z-10 bg-black/50 backdrop-blur-md pt-4 pb-3 px-4 flex items-center justify-between">
+        <motion.button 
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => router.back()} 
+          className="w-10 h-10 rounded-full liquid-glass-icon flex items-center justify-center text-white shadow-md"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </motion.button>
+        <span className="text-xs font-bold uppercase tracking-wider text-white/50">Riwayat Putar</span>
+        {history.length > 0 ? (
+          <motion.button 
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setShowClearConfirm(true)}
+            className="w-10 h-10 rounded-full liquid-glass-icon flex items-center justify-center text-white/60 hover:text-red-400 shadow-md transition-colors"
+            title="Hapus Riwayat"
+          >
+            <Trash2 className="w-4 h-4" />
+          </motion.button>
+        ) : (
+          <div className="w-10" />
+        )}
       </div>
 
-      <div className="px-4 mb-6">
-        <button className="px-5 py-2 bg-white/10 text-white rounded-full text-sm font-medium border border-white/5">
-          Lokal
-        </button>
-      </div>
-
-      <div className="space-y-8">
-        {todayHistory.length > 0 && (
-          <div>
-            <h2 className="text-xl font-bold text-white px-4 mb-4">Hari ini</h2>
-            <div className="space-y-1">
-              {todayHistory.map(renderTrackItem)}
-            </div>
+      {history.length > 0 && (
+        <div className="px-4 py-3 flex items-center justify-between border-b border-white/10 mb-4">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-[#81B29A]" />
+            <span className="text-xs font-bold text-white">{history.length} lagu di riwayat</span>
           </div>
+          <div className="flex items-center gap-2">
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={handlePlayAll}
+              className="px-3.5 py-1.5 rounded-full bg-white text-zinc-950 text-xs font-bold flex items-center gap-1.5 shadow-md"
+            >
+              <Play className="w-3.5 h-3.5 fill-current" />
+              <span>Putar</span>
+            </motion.button>
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={handleShuffle}
+              className="p-2 rounded-full liquid-glass border border-white/15 text-white"
+              title="Acak"
+            >
+              <Shuffle className="w-3.5 h-3.5" />
+            </motion.button>
+          </div>
+        </div>
+      )}
+
+      <div className="px-4 max-w-3xl mx-auto space-y-6">
+        {todayHistory.length > 0 && (
+          <motion.div variants={containerVariants} initial="hidden" animate="show">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-white/60 mb-2 px-1">Hari Ini</h2>
+            <div className="space-y-1">
+              {todayHistory.map((item, idx) => (
+                <motion.div key={`today-${item.track.videoId}-${idx}`} variants={itemVariants}>
+                  <TrackItem track={item.track} queue={historyTracks} />
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
         )}
 
         {thisWeekHistory.length > 0 && (
-          <div>
-            <h2 className="text-xl font-bold text-white px-4 mb-4">Minggu ini</h2>
+          <motion.div variants={containerVariants} initial="hidden" animate="show">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-white/60 mb-2 px-1">Minggu Ini</h2>
             <div className="space-y-1">
-              {thisWeekHistory.map(renderTrackItem)}
+              {thisWeekHistory.map((item, idx) => (
+                <motion.div key={`week-${item.track.videoId}-${idx}`} variants={itemVariants}>
+                  <TrackItem track={item.track} queue={historyTracks} />
+                </motion.div>
+              ))}
             </div>
-          </div>
+          </motion.div>
         )}
 
         {olderHistory.length > 0 && (
-          <div>
-            <h2 className="text-xl font-bold text-white px-4 mb-4">Lebih lama</h2>
+          <motion.div variants={containerVariants} initial="hidden" animate="show">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-white/60 mb-2 px-1">Lebih Lama</h2>
             <div className="space-y-1">
-              {olderHistory.map(renderTrackItem)}
+              {olderHistory.map((item, idx) => (
+                <motion.div key={`older-${item.track.videoId}-${idx}`} variants={itemVariants}>
+                  <TrackItem track={item.track} queue={historyTracks} />
+                </motion.div>
+              ))}
             </div>
-          </div>
+          </motion.div>
         )}
 
         {history.length === 0 && (
-          <div className="text-center text-white/50 mt-20">
-            Belum ada riwayat putaran
+          <div className="text-center py-20 text-white/50 rounded-2xl liquid-glass-subtle border border-dashed border-white/10 p-6">
+            <Clock className="w-12 h-12 text-white/20 mx-auto mb-3" />
+            <p className="font-bold text-white text-base">Belum ada riwayat putaran</p>
+            <p className="text-xs text-white/50 mt-1">Lagu-lagu yang Anda dengarkan akan otomatis dicatat di sini.</p>
           </div>
         )}
       </div>
+
+      <ConfirmModal
+        isOpen={showClearConfirm}
+        title="Hapus Semua Riwayat"
+        message="Apakah Anda yakin ingin menghapus seluruh riwayat putaran musik Anda?"
+        onConfirm={() => {
+          clearHistory();
+          setShowClearConfirm(false);
+        }}
+        onCancel={() => setShowClearConfirm(false)}
+      />
     </main>
   );
 }
