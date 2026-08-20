@@ -1,24 +1,32 @@
 import { ArrowLeft } from 'lucide-react';
-import Image from 'next/image';
+import { SmoothImage } from '@/components/SmoothImage';
 import Link from 'next/link';
 import { getHighResImage } from '@/lib/utils';
 import { notFound } from 'next/navigation';
-import YTMusic from 'ytmusic-api';
+import { getYTMusic } from '@/lib/ytmusic';
 import AlbumClient from './AlbumClient';
 import AlbumTrackClient from './AlbumTrackClient';
 import { MarqueeText } from '@/components/MarqueeText';
 
-async function getAlbumDetails(id: string) {
+async function getAlbumDetails(rawId: string) {
   try {
-    const ytmusic = new YTMusic();
-    await ytmusic.initialize();
-    const album = await ytmusic.getAlbum(id);
-    return album;
-  } catch (error: any) {
-    if (error?.isAxiosError && error?.response?.status === 400) {
-      // Suppress 400 errors as they just mean the ID is invalid
-      return null;
+    const ytmusic = await getYTMusic();
+    const candidateIds = [
+      rawId,
+      rawId.startsWith('OLAK') || rawId.startsWith('RD') ? `VL${rawId}` : null,
+      rawId.startsWith('VL') ? rawId.slice(2) : `VL${rawId}`
+    ].filter(Boolean) as string[];
+
+    for (const id of candidateIds) {
+      try {
+        const album = await ytmusic.getAlbum(id);
+        if (album && album.songs) return album;
+      } catch {
+        // try next candidate
+      }
     }
+    return null;
+  } catch (error: any) {
     console.error('Error fetching album:', error?.message || error);
     return null;
   }
@@ -44,19 +52,19 @@ export default async function AlbumPage({ params }: { params: Promise<{ id: stri
   };
 
   return (
-    <main className="min-h-screen pb-24 bg-black">
+    <main className="min-h-screen pb-32 bg-black">
       <div className="sticky top-0 z-10 bg-black/50 backdrop-blur-md pt-6 pb-4 px-4 flex items-center justify-between">
-        <div className="flex items-center gap-4 flex-1 min-w-0">
-          <Link href="/" className="text-white hover:bg-white/10 p-2 rounded-full transition-colors shrink-0">
-            <ArrowLeft className="w-6 h-6" />
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <Link href="/" className="w-10 h-10 rounded-full liquid-glass-icon flex items-center justify-center text-white hover:scale-105 transition-all shrink-0">
+            <ArrowLeft className="w-5 h-5" />
           </Link>
           <MarqueeText text={album.name} className="text-xl font-bold text-white" />
         </div>
       </div>
 
       <div className="flex flex-col items-center px-4 mt-4 mb-8">
-        <div className="relative w-64 h-64 rounded-xl overflow-hidden shadow-2xl mb-6">
-          <Image src={getHighResImage(coverImage, 800)} alt={album.name} fill sizes="(max-width: 640px) 100vw, 300px" className="object-cover" />
+        <div className="relative w-64 h-64 rounded-2xl overflow-hidden shadow-2xl mb-6 bg-white/5">
+          <SmoothImage src={getHighResImage(coverImage, 800)} alt={album.name} fill sizes="(max-width: 640px) 100vw, 300px" priority className="object-cover" />
         </div>
         <h2 className="text-2xl font-bold text-white mb-2 text-center">{album.name}</h2>
         <Link href={`/artist/${album.artist.artistId}`} className="text-white/80 hover:underline text-base mb-2">
