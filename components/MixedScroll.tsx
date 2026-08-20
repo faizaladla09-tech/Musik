@@ -1,5 +1,8 @@
+'use client';
+
+import React, { memo } from 'react';
 import { Play, ArrowRight } from 'lucide-react';
-import Image from 'next/image';
+import { SmoothImage } from '@/components/SmoothImage';
 import { getHighResImage } from '@/lib/utils';
 import { motion } from 'motion/react';
 import { MarqueeText } from './MarqueeText';
@@ -11,13 +14,17 @@ interface MixedScrollProps {
   items: any[];
 }
 
-export function MixedScroll({ title, items }: MixedScrollProps) {
+function MixedScrollComponent({ title, items }: MixedScrollProps) {
   const playTrack = usePlayerStore((state) => state.playTrack);
   const router = useRouter();
 
   if (!items || items.length === 0) return null;
 
-  let headerContent = <h2 className="text-xl font-bold text-white mb-4 px-4">{title}</h2>;
+  let headerContent = (
+    <div className="flex items-center justify-between mb-3.5 px-4">
+      <h2 className="text-xl font-extrabold text-white tracking-tight">{title}</h2>
+    </div>
+  );
 
   if (title.startsWith('Serupa dengan ')) {
     const mainTitle = title.replace('Serupa dengan ', '');
@@ -50,19 +57,19 @@ export function MixedScroll({ title, items }: MixedScrollProps) {
         className="flex items-center justify-between mb-4 px-4 cursor-pointer group"
         onClick={handleHeaderClick}
       >
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3.5">
           {headerImage && (
-            <div className="w-14 h-14 rounded-md overflow-hidden relative shrink-0">
-              <Image src={headerImage} alt={mainTitle} fill className="object-cover" />
+            <div className="w-13 h-13 rounded-2xl overflow-hidden relative shrink-0 bg-white/5 border border-white/15 shadow-md">
+              <SmoothImage src={headerImage} alt={mainTitle} fill className="object-cover" />
             </div>
           )}
           <div className="flex flex-col justify-center">
-            <span className="text-sm text-white/70 font-medium">Serupa dengan</span>
-            <h2 className="text-2xl font-bold text-white leading-tight">{mainTitle}</h2>
+            <span className="text-xs text-[#81B29A] font-bold uppercase tracking-wider">Serupa dengan</span>
+            <h2 className="text-xl sm:text-2xl font-black text-white leading-tight tracking-tight group-hover:text-[#81B29A] transition-colors">{mainTitle}</h2>
           </div>
         </div>
-        <button className="p-2 text-white/70 group-hover:text-white transition-colors">
-          <ArrowRight className="w-6 h-6" />
+        <button className="w-10 h-10 rounded-full liquid-glass-icon text-white/80 group-hover:text-white shadow-md">
+          <ArrowRight className="w-4 h-4" />
         </button>
       </div>
     );
@@ -71,7 +78,7 @@ export function MixedScroll({ title, items }: MixedScrollProps) {
   return (
     <div className="mb-8">
       {headerContent}
-      <div className="flex overflow-x-auto no-scrollbar gap-4 px-4 pb-4 snap-x snap-mandatory scroll-smooth">
+      <div className="flex overflow-x-auto no-scrollbar gap-3.5 px-4 pr-8 pb-3 snap-x snap-mandatory scroll-smooth w-full">
         {items.map((item, i) => {
           const type = item.type;
           const isArtist = type === 'ARTIST';
@@ -81,14 +88,14 @@ export function MixedScroll({ title, items }: MixedScrollProps) {
 
           const titleText = item.name || item.title || 'Unknown';
           const subtitleText = isArtist 
-            ? 'Artist' 
+            ? 'Artis' 
             : isPlaylist 
               ? 'Playlist' 
               : isAlbum 
                 ? 'Album' 
                 : Array.isArray(item.artist) 
                   ? item.artist.map((a: any) => a.name).join(', ') 
-                  : item.artist?.name || 'Song';
+                  : item.artist?.name || 'Lagu';
 
           const handleClick = () => {
             if (isArtist && item.artistId) {
@@ -105,32 +112,32 @@ export function MixedScroll({ title, items }: MixedScrollProps) {
           return (
             <motion.div
               key={`${item.videoId || item.playlistId || item.albumId || item.artistId}-${i}`}
-              initial={{ opacity: 0, x: 20 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true, amount: 0.1 }}
-              transition={{ duration: 0.3, ease: "easeOut" }}
-              className="flex-none w-36 cursor-pointer group snap-center hover:scale-[1.02] active:scale-[0.98] transition-transform duration-200"
+              initial={{ opacity: 0, scale: 0.94 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true, amount: 0.05 }}
+              whileTap={{ scale: 0.94 }}
+              whileHover={{ y: -3 }}
+              transition={{ type: 'spring', damping: 20, stiffness: 260 }}
+              className="flex-none w-36 sm:w-40 cursor-pointer group snap-start"
               onClick={handleClick}
             >
-              <div className={`relative w-36 h-36 overflow-hidden mb-2 shadow-lg transition-transform duration-300 ${isArtist ? 'rounded-full' : 'rounded-xl'}`}>
-                <Image 
+              <div className={`relative w-36 h-36 sm:w-40 sm:h-40 overflow-hidden mb-2.5 shadow-lg bg-white/5 border border-white/10 group-hover:border-white/20 transition-all ${isArtist ? 'rounded-full' : 'rounded-2xl'}`}>
+                <SmoothImage 
                   src={getHighResImage(item.thumbnails?.[item.thumbnails.length - 1]?.url, 400)} 
                   alt={titleText} 
                   fill 
-                  sizes="144px" 
-                  className="object-cover" 
+                  sizes="160px" 
+                  className="object-cover group-hover:scale-105 transition-transform duration-300" 
                 />
-                <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                  <div className="w-10 h-10 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center">
-                    <svg className="w-5 h-5 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M8 5v14l11-7z" />
-                    </svg>
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[2px]">
+                  <div className="w-12 h-12 bg-white text-zinc-950 rounded-full flex items-center justify-center shadow-2xl transform group-hover:scale-110 transition-transform">
+                    <Play className="w-5 h-5 fill-current ml-0.5" />
                   </div>
                 </div>
               </div>
               <div className="w-full">
-                <MarqueeText text={titleText} className="text-sm font-medium text-white leading-tight" />
-                <MarqueeText text={subtitleText} className="text-xs text-gray-400 mt-1" />
+                <MarqueeText text={titleText} className="text-xs sm:text-sm font-bold text-white leading-tight" />
+                <MarqueeText text={subtitleText} className="text-[11px] sm:text-xs text-white/60 mt-0.5" />
               </div>
             </motion.div>
           );
@@ -139,3 +146,5 @@ export function MixedScroll({ title, items }: MixedScrollProps) {
     </div>
   );
 }
+
+export const MixedScroll = memo(MixedScrollComponent);
